@@ -219,10 +219,10 @@ if __name__ == '__main__':
     LOCALIZATION_TH = 0.95
 
     # FOV(rad), modify this according to your LiDAR type
-    FOV = 1.6
+    FOV = 6.28
 
     # The farthest distance(meters) within FOV
-    FOV_FAR = 150
+    FOV_FAR = 20
 
     rospy.init_node('fast_lio_localization')
     rospy.loginfo('Localization Node Inited...')
