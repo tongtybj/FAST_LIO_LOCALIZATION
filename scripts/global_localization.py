@@ -3,7 +3,6 @@
 from __future__ import print_function, division, absolute_import
 
 import copy
-import thread
 import time
 
 import open3d as o3d
@@ -42,11 +41,11 @@ def msg_to_array(pc_msg):
     return pc
 
 def registration_at_scale(pc_scan, pc_map, initial, scale):
-    result_icp = o3d.registration.registration_icp(
+    result_icp = o3d.pipelines.registration.registration_icp(
         voxel_down_sample(pc_scan, SCAN_VOXEL_SIZE * scale), voxel_down_sample(pc_map, MAP_VOXEL_SIZE * scale),
         1.0 * scale, initial,
-        o3d.registration.TransformationEstimationPointToPoint(),
-        o3d.registration.ICPConvergenceCriteria(max_iteration=20)
+        o3d.pipelines.registration.TransformationEstimationPointToPoint(),
+        o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=20)
     )
     return result_icp.transformation, result_icp.fitness
 
@@ -225,14 +224,10 @@ def cb_save_cur_scan(pc_msg):
         pub_pc_in_map.publish(pc_msg)
 
 
-def thread_localization():
+def thread_localization(msg):
+
     global T_map_to_odom
-
-    while True:
-
-        global_localization(T_map_to_odom)
-
-        rospy.sleep(1 / FREQ_LOCALIZATION)
+    global_localization(T_map_to_odom)
 
 
 
@@ -295,6 +290,6 @@ if __name__ == '__main__':
 
     rospy.loginfo('Initialize successfully!!!!!! \n')
 
-    thread.start_new_thread(thread_localization, ())
+    rospy.Timer(rospy.Duration(1 / FREQ_LOCALIZATION), thread_localization)
 
     rospy.spin()
