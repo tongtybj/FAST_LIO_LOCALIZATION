@@ -7,6 +7,8 @@
 
   <arg name="find_initial_pose" default="false" />
 
+  <arg name="livox_driver" default="true" />
+
   <arg name="frame_offset_x" default="0.0"/>
   <arg name="frame_offset_y" default="0.0"/>
   <arg name="frame_offset_z" default="0.0"/>
@@ -17,6 +19,7 @@
   <!-- fast lio for odometry -->
   <include file="$(find fast_lio)/launch/mapping_mid360.launch" >
     <arg name="rviz" value="false" />
+    <arg name="livox_driver" value="$(arg livox_driver)" />
   </include>
 
   <group unless="$(arg find_initial_pose)">
