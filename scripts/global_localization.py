@@ -276,7 +276,7 @@ if __name__ == '__main__':
                               tf.listener.xyzw_to_mat44(init_q))
 
     rospy.logwarn('Waiting for global map......')
-    initialize_global_map(rospy.wait_for_message('/map', PointCloud2))
+    initialize_global_map(rospy.wait_for_message('/3d_map', PointCloud2))
     rospy.loginfo('Get global map......')
 
     while not initialized:
