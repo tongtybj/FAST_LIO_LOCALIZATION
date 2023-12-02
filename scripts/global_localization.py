@@ -27,6 +27,10 @@ headless = False
 
 np.set_printoptions(precision=3, suppress=True)
 
+def dist_square(x, y, z):
+    return x * x + y * y + z * z
+
+
 def pose_to_mat(pose_msg):
     return np.matmul(
         tf.listener.xyz_to_mat44(pose_msg.pose.position),
@@ -91,10 +95,13 @@ def crop_global_map_in_FOV(global_map, pose_estimation, cur_odom):
     global_map_in_base_link = np.matmul(T_base_link_to_map, global_map_in_map.T).T
 
     # extract pointcloud inside the FoV and range
-    if FOV > 3.14:
+    if FOV == 2 * np.pi:
+        indices = np.where(
+            dist_square(global_map_in_base_link[:, 0], global_map_in_base_link[:, 1], global_map_in_base_link[:, 2]) < FOV_FAR * FOV_FAR)
+    elif FOV > np.pi:
         # All-range LiDAR
         indices = np.where(
-            (global_map_in_base_link[:, 0] < FOV_FAR) &
+            (dist_square(global_map_in_base_link[:, 0], global_map_in_base_link[:, 1], global_map_in_base_link[:, 2]) < FOV_FAR * FOV_FAR) &
             (np.abs(np.arctan2(global_map_in_base_link[:, 1], global_map_in_base_link[:, 0])) < FOV / 2.0)
         )
     else:
@@ -106,6 +113,7 @@ def crop_global_map_in_FOV(global_map, pose_estimation, cur_odom):
         )
     global_map_in_FOV = o3d.geometry.PointCloud()
     global_map_in_FOV.points = o3d.utility.Vector3dVector(np.squeeze(global_map_in_map[indices, :3]))
+
 
     # publish map point cloud inside the FoV
     header = cur_odom.header
@@ -215,13 +223,17 @@ def cb_save_cur_scan(pc_msg):
                      pc_msg.fields[3], pc_msg.fields[7]]
     pc = msg_to_array(pc_msg)
 
+    # TODO: shift to "global_localization" to save computation
+    indices = np.where(dist_square(pc[:, 0], pc[:, 1], pc[:, 2]) < SCAN_THRESH * SCAN_THRESH)
+
     cur_scan = o3d.geometry.PointCloud()
-    cur_scan.points = o3d.utility.Vector3dVector(pc[:, :3])
+    cur_scan.points = o3d.utility.Vector3dVector(np.squeeze(pc[indices, :3]))
 
     new_scan = True
 
     if not headless:
-        pub_pc_in_map.publish(pc_msg)
+        publish_point_cloud(pub_pc_in_map, pc_msg.header, np.array(cur_scan.points)[::10])
+        # pub_pc_in_map.publish(pc_msg)
 
 
 def thread_localization(msg):
@@ -232,24 +244,29 @@ def thread_localization(msg):
 
 
 if __name__ == '__main__':
-    MAP_VOXEL_SIZE = 0.4
-    SCAN_VOXEL_SIZE = 0.1
-
-    # Global localization frequency (HZ)
-    FREQ_LOCALIZATION = 0.5
-
-    # The threshold of global localization,
-    # only those scan2map-matching with higher fitness than LOCALIZATION_TH will be taken
-    LOCALIZATION_TH = 0.95
-
-    # FOV(rad), modify this according to your LiDAR type
-    FOV = 6.28
-
-    # The farthest distance(meters) within FOV
-    FOV_FAR = 20
 
     rospy.init_node('fast_lio_localization')
     rospy.loginfo('Localization Node Inited...')
+
+    # parameter for registration
+    MAP_VOXEL_SIZE = rospy.get_param("~registration/map_voxel_size", 0.4)
+    SCAN_VOXEL_SIZE = rospy.get_param("~registration/scan_voxel_size", 0.1)
+
+    # Global localization frequency (HZ)
+    FREQ_LOCALIZATION = rospy.get_param("~registration/freq_localization", 0.5)
+
+    # The threshold of global localization,
+    # only those scan2map-matching with higher fitness than LOCALIZATION_TH will be taken
+    LOCALIZATION_TH = rospy.get_param("~registration/localization_thresh", 0.95)
+
+    # FOV(rad), modify this according to your LiDAR type
+    FOV = rospy.get_param("~registration/fov", 2 * np.pi)
+
+    # The farthest distance(meters) within FOV
+    FOV_FAR = rospy.get_param("~registration/fov_far", 10.0)
+
+    # The range of current scan
+    SCAN_THRESH = rospy.get_param("~registration/scan_thresh", 5.0)
 
     # publisher
     pub_pc_in_map = rospy.Publisher('/cur_scan_in_map', PointCloud2, queue_size=1)

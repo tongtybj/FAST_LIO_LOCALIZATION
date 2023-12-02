@@ -16,6 +16,14 @@
   <arg name="frame_offset_pitch" default="0.0"/>
   <arg name="frame_offset_yaw" default="0.0"/>
 
+  <arg name="map_voxel_size" default="0.2"/> <!-- default: 0.4 -->
+  <arg name="scan_voxel_size" default="0.1"/>
+  <arg name="freq_localization" default="0.5"/>
+  <arg name="localization_thresh" default="0.95"/>
+  <arg name="fov_far" default="10.0"/>
+  <arg name="scan_thresh" default="5.0"/>
+
+
   <!-- fast lio for odometry -->
   <include file="$(find fast_lio)/launch/mapping_mid360.launch" >
     <arg name="rviz" value="false" />
@@ -31,6 +39,14 @@
       <param name="initial_frame_offset/roll" value="$(arg frame_offset_roll)"/>
       <param name="initial_frame_offset/pitch" value="$(arg frame_offset_pitch)"/>
       <param name="initial_frame_offset/yaw" value="$(arg frame_offset_yaw)"/>
+
+      <param name="registration/map_voxel_size" value="$(arg map_voxel_size)"/>
+      <param name="registration/scan_voxel_size" value="$(arg scan_voxel_size)"/>
+      <param name="registration/freq_localization" value="$(arg freq_localization)"/>
+      <param name="registration/localization_thresh" value="$(arg localization_thresh)"/>
+      <param name="registration/fov_far" value="$(arg fov_far)"/>
+      <param name="registration/scan_thresh" value="$(arg scan_thresh)"/>
+
       <param name="headless" value="$(arg headless)"/>
     </node>
   </group>
