@@ -28,6 +28,8 @@ cur_odom = None
 cur_scan = None
 new_scan = False
 headless = False
+stack_cnt = 0
+stack_scan = None
 
 np.set_printoptions(precision=3, suppress=True)
 
@@ -123,13 +125,13 @@ def crop_global_map_in_FOV(global_map, pose_estimation, cur_odom):
     # publish map point cloud inside the FoV
     header = cur_odom.header
     header.frame_id = 'map'
-    publish_point_cloud(pub_submap, header, np.array(global_map_in_FOV.points)[::10])
+    publish_point_cloud(pub_submap, header, np.array(global_map_in_FOV.points))
 
     return global_map_in_FOV
 
 
 def global_localization(pose_estimation):
-    global global_map, cur_scan, cur_odom, T_map_to_odom, new_scan
+    global global_map, cur_scan, cur_odom, T_map_to_odom, new_scan, initialized
 
 
     if not new_scan:
@@ -143,12 +145,23 @@ def global_localization(pose_estimation):
 
     global_map_in_FOV = crop_global_map_in_FOV(global_map, pose_estimation, cur_odom)
 
-    # rough ICP point matching
-    transformation, _ = registration_at_scale(scan_tobe_mapped, global_map_in_FOV, initial=pose_estimation, scale=5)
+
+    scale = 5
+    if not initialized:
+        scale = 2 # important, TODO: rosparam
+
+        # rough ICP point matching
+        transformation, fitness = registration_at_scale(scan_tobe_mapped, global_map_in_FOV, initial=pose_estimation, scale=scale)
+
+        print("rough fitness: {}".format(fitness))
+
+        # should use RANSAC
+    else:
+        transformation = pose_estimation
 
     # accurate ICP point matching
-    transformation, fitness = registration_at_scale(scan_tobe_mapped, global_map_in_FOV, initial=transformation,
-                                                    scale=1)
+    transformation, fitness = registration_at_scale(scan_tobe_mapped, global_map_in_FOV, initial=transformation, scale=1)
+
     toc = time.time()
     rospy.loginfo('Time: {:.2f}; fitness score:{:.2f}'.format(toc - tic, fitness))
 
@@ -220,6 +233,8 @@ def cb_save_cur_scan(pc_msg):
     global cur_scan
     global new_scan
     global headless
+    global stack_scan
+    global stack_cnt
     pc_msg.header.frame_id = 'camera_init'
     pc_msg.header.stamp = rospy.Time().now()
 
@@ -231,20 +246,29 @@ def cb_save_cur_scan(pc_msg):
     # TODO: shift to "global_localization" to save computation
     indices = np.where(dist_square(pc[:, 0], pc[:, 1], pc[:, 2]) < SCAN_THRESH * SCAN_THRESH)
 
-    cur_scan = o3d.geometry.PointCloud()
-    cur_scan.points = o3d.utility.Vector3dVector(np.squeeze(pc[indices, :3]))
+    stack_cnt += 1
+    if stack_scan is None:
+        stack_scan = np.squeeze(pc[indices, :3])
+    else:
+        stack_scan = np.concatenate([stack_scan, np.squeeze(pc[indices, :3])])
 
-    new_scan = True
+    # print(stack_scan.shape)
+    if stack_cnt == SCAN_STACK_SIZE:
+        new_scan = True
+        stack_cnt = 0
+        cur_scan = o3d.geometry.PointCloud()
+        cur_scan.points = o3d.utility.Vector3dVector(stack_scan)
+        stack_scan = None
 
-    if not headless:
-        publish_point_cloud(pub_pc_in_map, pc_msg.header, np.array(cur_scan.points)[::10])
-        # pub_pc_in_map.publish(pc_msg)
+
+        if not headless:
+            publish_point_cloud(pub_pc_in_map, pc_msg.header, np.array(cur_scan.points))
 
 
 def thread_localization(msg):
 
-    global T_map_to_odom
-    global_localization(T_map_to_odom)
+    global T_map_to_odom, initialized
+    initialized = global_localization(T_map_to_odom)
 
 
 
@@ -256,6 +280,7 @@ if __name__ == '__main__':
     # parameter for registration
     MAP_VOXEL_SIZE = rospy.get_param("~registration/map_voxel_size", 0.4)
     SCAN_VOXEL_SIZE = rospy.get_param("~registration/scan_voxel_size", 0.1)
+    SCAN_STACK_SIZE = rospy.get_param("~registration/stack_size", 10)
 
     # Global localization frequency (HZ)
     FREQ_LOCALIZATION = rospy.get_param("~registration/freq_localization", 0.5)
@@ -283,6 +308,7 @@ if __name__ == '__main__':
     rospy.Subscriber('/cloud_registered', PointCloud2, cb_save_cur_scan, queue_size=1)
     rospy.Subscriber('/Odometry', Odometry, cb_save_cur_odom, queue_size=1)
 
+    oneshot = rospy.get_param("~oneshot", False)
     headless = rospy.get_param("~headless", False)
 
     # get init frame offset from rosparam
@@ -306,12 +332,14 @@ if __name__ == '__main__':
         if new_scan:
             initialized = global_localization(initial_pose)
         else:
-            rospy.logwarn('Waiting for current scan data')
+            rospy.logwarn_throttle(1.0, 'Waiting for current scan data')
 
-        rospy.sleep(1.0)
+        rospy.sleep(0.05)
 
     rospy.loginfo('Initialize successfully!!!!!! \n')
 
-    rospy.Timer(rospy.Duration(1 / FREQ_LOCALIZATION), thread_localization)
+    if not oneshot:
+
+        rospy.Timer(rospy.Duration(1 / FREQ_LOCALIZATION), thread_localization)
 
     rospy.spin()
