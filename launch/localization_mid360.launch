@@ -5,8 +5,6 @@
 
   <arg name="headless" default="false" />
 
-  <arg name="find_initial_pose" default="false" />
-
   <arg name="livox_driver" default="true" />
 
   <arg name="frame_offset_x" default="0.0"/>
@@ -30,26 +28,25 @@
     <arg name="livox_driver" value="$(arg livox_driver)" />
   </include>
 
-  <group unless="$(arg find_initial_pose)">
-    <!-- loalization-->
-    <node pkg="fast_lio_localization" type="global_localization.py" name="global_localization" output="screen">
-      <param name="initial_frame_offset/x" value="$(arg frame_offset_x)"/>
-      <param name="initial_frame_offset/y" value="$(arg frame_offset_y)"/>
-      <param name="initial_frame_offset/z" value="$(arg frame_offset_z)"/>
-      <param name="initial_frame_offset/roll" value="$(arg frame_offset_roll)"/>
-      <param name="initial_frame_offset/pitch" value="$(arg frame_offset_pitch)"/>
-      <param name="initial_frame_offset/yaw" value="$(arg frame_offset_yaw)"/>
+  <!-- loalization-->
+  <node pkg="fast_lio_localization" type="global_localization.py" name="global_localization" output="screen">
+    <param name="initial_frame_offset/x" value="$(arg frame_offset_x)"/>
+    <param name="initial_frame_offset/y" value="$(arg frame_offset_y)"/>
+    <param name="initial_frame_offset/z" value="$(arg frame_offset_z)"/>
+    <param name="initial_frame_offset/roll" value="$(arg frame_offset_roll)"/>
+    <param name="initial_frame_offset/pitch" value="$(arg frame_offset_pitch)"/>
+    <param name="initial_frame_offset/yaw" value="$(arg frame_offset_yaw)"/>
 
-      <param name="registration/map_voxel_size" value="$(arg map_voxel_size)"/>
-      <param name="registration/scan_voxel_size" value="$(arg scan_voxel_size)"/>
-      <param name="registration/freq_localization" value="$(arg freq_localization)"/>
-      <param name="registration/localization_thresh" value="$(arg localization_thresh)"/>
-      <param name="registration/fov_far" value="$(arg fov_far)"/>
-      <param name="registration/scan_thresh" value="$(arg scan_thresh)"/>
+    <param name="registration/map_voxel_size" value="$(arg map_voxel_size)"/>
+    <param name="registration/scan_voxel_size" value="$(arg scan_voxel_size)"/>
+    <param name="registration/freq_localization" value="$(arg freq_localization)"/>
+    <param name="registration/localization_thresh" value="$(arg localization_thresh)"/>
+    <param name="registration/fov_far" value="$(arg fov_far)"/>
+    <param name="registration/scan_thresh" value="$(arg scan_thresh)"/>
 
-      <param name="headless" value="$(arg headless)"/>
-    </node>
-  </group>
+    <param name="headless" value="$(arg headless)"/>
+  </node>
+
 
   <!-- global map-->
   <node pkg="pcl_ros" type="pcd_to_pointcloud" name="map_publishe" output="screen" args="$(arg map) 5 _frame_id:=/map cloud_pcd:=/3d_map" />
