@@ -6,6 +6,11 @@ import copy
 import time
 
 import open3d as o3d
+if int(o3d.__version__.split('.')[0]) < 1:
+    o3d_registration = o3d.registration
+else:
+    o3d_registration = o3d.pipelines.registration
+
 import rospy
 import ros_numpy
 from geometry_msgs.msg import PoseStamped, Pose, Point, Vector3, Quaternion, TransformStamped
@@ -15,7 +20,6 @@ import numpy as np
 import tf
 import tf.transformations
 import tf2_ros
-
 
 global_map = None
 initialized = False
@@ -45,11 +49,12 @@ def msg_to_array(pc_msg):
     return pc
 
 def registration_at_scale(pc_scan, pc_map, initial, scale):
-    result_icp = o3d.pipelines.registration.registration_icp(
+
+    result_icp = o3d.registration.registration_icp(
         voxel_down_sample(pc_scan, SCAN_VOXEL_SIZE * scale), voxel_down_sample(pc_map, MAP_VOXEL_SIZE * scale),
         1.0 * scale, initial,
-        o3d.pipelines.registration.TransformationEstimationPointToPoint(),
-        o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=20)
+        o3d.registration.TransformationEstimationPointToPoint(),
+        o3d.registration.ICPConvergenceCriteria(max_iteration=20)
     )
     return result_icp.transformation, result_icp.fitness
 
