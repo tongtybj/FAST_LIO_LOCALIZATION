@@ -18,6 +18,7 @@
   <arg name="scan_stack_size" default="10"/>
   <arg name="map_voxel_size" default="0.2"/> <!-- default: 0.4 -->
   <arg name="scan_voxel_size" default="0.1"/>
+  <arg name="max_corres_dist" default="1.0"/>
   <arg name="freq_localization" default="0.5"/>
   <arg name="localization_thresh" default="0.95"/>
   <arg name="fov_far" default="10.0"/>
@@ -41,6 +42,7 @@
     <param name="initial_frame_offset/yaw" value="$(arg frame_offset_yaw)"/>
 
     <param name="registration/stack_size" value="$(arg scan_stack_size)"/>
+    <param name="registration/max_corres_dist" value="$(arg max_corres_dist)"/>
     <param name="registration/map_voxel_size" value="$(arg map_voxel_size)"/>
     <param name="registration/scan_voxel_size" value="$(arg scan_voxel_size)"/>
     <param name="registration/freq_localization" value="$(arg freq_localization)"/>

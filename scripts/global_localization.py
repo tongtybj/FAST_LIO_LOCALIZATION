@@ -54,7 +54,7 @@ def registration_at_scale(pc_scan, pc_map, initial, scale):
 
     result_icp = o3d.registration.registration_icp(
         voxel_down_sample(pc_scan, SCAN_VOXEL_SIZE * scale), voxel_down_sample(pc_map, MAP_VOXEL_SIZE * scale),
-        1.0 * scale, initial,
+        MAX_CORRES_DIST, initial,
         o3d.registration.TransformationEstimationPointToPoint(),
         o3d.registration.ICPConvergenceCriteria(max_iteration=20)
     )
@@ -281,6 +281,7 @@ if __name__ == '__main__':
     MAP_VOXEL_SIZE = rospy.get_param("~registration/map_voxel_size", 0.4)
     SCAN_VOXEL_SIZE = rospy.get_param("~registration/scan_voxel_size", 0.1)
     SCAN_STACK_SIZE = rospy.get_param("~registration/stack_size", 10)
+    MAX_CORRES_DIST = rospy.get_param("~registration/max_corres_dist", 1.0)
 
     # Global localization frequency (HZ)
     FREQ_LOCALIZATION = rospy.get_param("~registration/freq_localization", 0.5)
