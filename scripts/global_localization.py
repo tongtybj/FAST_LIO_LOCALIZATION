@@ -52,6 +52,7 @@ def msg_to_array(pc_msg):
 
 def registration_at_scale(pc_scan, pc_map, initial, scale):
 
+    #initial = np.array([[1., 0., 0., 0.], [0., 1., 0., 0.], [0., 0., 1., 0.], [0., 0., 0., 1.]])
     result_icp = o3d.registration.registration_icp(
         voxel_down_sample(pc_scan, SCAN_VOXEL_SIZE * scale), voxel_down_sample(pc_map, MAP_VOXEL_SIZE * scale),
         MAX_CORRES_DIST, initial,
@@ -92,6 +93,8 @@ def publish_point_cloud(publisher, header, pc):
 
 def crop_global_map_in_FOV(global_map, pose_estimation, cur_odom):
 
+    global initialized
+
     T_odom_to_base_link = pose_to_mat(cur_odom.pose)
     T_map_to_base_link = np.matmul(pose_estimation, T_odom_to_base_link)
     T_base_link_to_map = inverse_se3(T_map_to_base_link)
@@ -102,24 +105,31 @@ def crop_global_map_in_FOV(global_map, pose_estimation, cur_odom):
     global_map_in_base_link = np.matmul(T_base_link_to_map, global_map_in_map.T).T
 
     # extract pointcloud inside the FoV and range
+
+    if not initialized:
+        map_dist_thresh = 5.0
+    else:
+        map_dist_thresh = FOV_FAR
+
     if FOV == 2 * np.pi:
         indices = np.where(
-            dist_square(global_map_in_base_link[:, 0], global_map_in_base_link[:, 1], global_map_in_base_link[:, 2]) < FOV_FAR * FOV_FAR)
+            dist_square(global_map_in_base_link[:, 0], global_map_in_base_link[:, 1], global_map_in_base_link[:, 2]) < map_dist_thresh * map_dist_thresh)
     elif FOV > np.pi:
         # All-range LiDAR
         indices = np.where(
-            (dist_square(global_map_in_base_link[:, 0], global_map_in_base_link[:, 1], global_map_in_base_link[:, 2]) < FOV_FAR * FOV_FAR) &
+            (dist_square(global_map_in_base_link[:, 0], global_map_in_base_link[:, 1], global_map_in_base_link[:, 2]) < map_dist_thresh * map_dist_thresh) &
             (np.abs(np.arctan2(global_map_in_base_link[:, 1], global_map_in_base_link[:, 0])) < FOV / 2.0)
         )
     else:
         # Front view type LiDAR
         indices = np.where(
             (global_map_in_base_link[:, 0] > 0) &
-            (global_map_in_base_link[:, 0] < FOV_FAR) &
+            (global_map_in_base_link[:, 0] < map_dist_thresh) &
             (np.abs(np.arctan2(global_map_in_base_link[:, 1], global_map_in_base_link[:, 0])) < FOV / 2.0)
         )
     global_map_in_FOV = o3d.geometry.PointCloud()
-    global_map_in_FOV.points = o3d.utility.Vector3dVector(np.squeeze(global_map_in_map[indices, :3]))
+    #global_map_in_FOV.points = o3d.utility.Vector3dVector(np.squeeze(global_map_in_map[indices, :3]))
+    global_map_in_FOV.points = o3d.utility.Vector3dVector(np.squeeze(global_map_in_base_link[indices, :3]))
 
 
     # publish map point cloud inside the FoV
@@ -129,6 +139,53 @@ def crop_global_map_in_FOV(global_map, pose_estimation, cur_odom):
 
     return global_map_in_FOV
 
+
+def preprocess_point_cloud(pcd, voxel_size):
+    # Downsample with a voxel size
+    pcd_down = voxel_down_sample(pcd, voxel_size)
+
+    radius_normal = voxel_size * 2
+    radius_normal = voxel_size * 10
+    # Estimate normal with search radius
+    pcd_down.estimate_normals(
+        o3d.geometry.KDTreeSearchParamHybrid(radius=radius_normal, max_nn=30))
+
+    radius_feature = voxel_size * 5
+    radius_feature = voxel_size * 20
+    # Compute FPFH feature with search radius
+    pcd_fpfh = o3d_registration.compute_fpfh_feature(
+        pcd_down,
+        o3d.geometry.KDTreeSearchParamHybrid(radius=radius_feature, max_nn=100))
+    return pcd_down, pcd_fpfh
+
+def execute_fast_global_registration(target, source):
+
+    voxel_size = 0.02 # TODO: rosparam
+
+    target_down, target_fpfh = preprocess_point_cloud(target, voxel_size)
+    source_down, source_fpfh = preprocess_point_cloud(source, voxel_size)
+
+    distance_threshold = voxel_size * 0.5
+    distance_threshold = 0.1
+    # Apply fast global registration with distance threshold
+
+    # result = o3d_registration.registration_fast_based_on_feature_matching(
+    #     target_down, source_down, target_fpfh, source_fpfh,
+    #     o3d_registration.FastGlobalRegistrationOption(
+    #         maximum_correspondence_distance=distance_threshold))
+
+
+    normal_thresh = 0.2
+    normal_thresh = 0.4
+    result = o3d_registration.registration_ransac_based_on_feature_matching(
+        target_down, source_down, target_fpfh, source_fpfh, distance_threshold,
+        o3d_registration.TransformationEstimationPointToPoint(False), 3, [
+            o3d.registration.CorrespondenceCheckerBasedOnNormal(normal_thresh),
+            o3d.registration.CorrespondenceCheckerBasedOnDistance(distance_threshold)
+        ], o3d.registration.RANSACConvergenceCriteria(10000000, 10000000))
+
+    print(result)
+    return result.transformation, result.fitness
 
 def global_localization(pose_estimation):
     global global_map, cur_scan, cur_odom, T_map_to_odom, new_scan, initialized
@@ -145,15 +202,19 @@ def global_localization(pose_estimation):
 
     global_map_in_FOV = crop_global_map_in_FOV(global_map, pose_estimation, cur_odom)
 
+    toc = time.time()
+    rospy.loginfo('global map cropping: {:.2f}'.format(toc - tic))
 
     scale = 5
     if not initialized:
         scale = 2 # important, TODO: rosparam
 
         # rough ICP point matching
-        transformation, fitness = registration_at_scale(scan_tobe_mapped, global_map_in_FOV, initial=pose_estimation, scale=scale)
+        #transformation, fitness = registration_at_scale(scan_tobe_mapped, global_map_in_FOV, initial=pose_estimation, scale=scale)
+        transformation, fitness = execute_fast_global_registration(scan_tobe_mapped, global_map_in_FOV)
 
         print("rough fitness: {}".format(fitness))
+        print("rough transformation: {}".format(transformation))
 
         # should use RANSAC
     else:
@@ -163,7 +224,7 @@ def global_localization(pose_estimation):
     transformation, fitness = registration_at_scale(scan_tobe_mapped, global_map_in_FOV, initial=transformation, scale=1)
 
     toc = time.time()
-    rospy.loginfo('Time: {:.2f}; fitness score:{:.2f}'.format(toc - tic, fitness))
+    rospy.loginfo('All Time: {:.2f}; fitness score:{:.2f}'.format(toc - tic, fitness))
 
     new_scan = False
 
@@ -207,11 +268,18 @@ def global_localization(pose_estimation):
 
 
 def voxel_down_sample(pcd, voxel_size):
+
+    tic = time.time()
     try:
         pcd_down = pcd.voxel_down_sample(voxel_size)
     except:
         # for opend3d 0.7 or lower
         pcd_down = o3d.geometry.voxel_down_sample(pcd, voxel_size)
+
+
+    toc = time.time()
+    rospy.loginfo('down samplng: {:.3f}'.format(toc - tic))
+
     return pcd_down
 
 
@@ -220,8 +288,10 @@ def initialize_global_map(pc_msg):
 
     global_map = o3d.geometry.PointCloud()
     global_map.points = o3d.utility.Vector3dVector(msg_to_array(pc_msg)[:, :3])
-    global_map = voxel_down_sample(global_map, MAP_VOXEL_SIZE)
+    # global_map = voxel_down_sample(global_map, MAP_VOXEL_SIZE)
     rospy.loginfo('Global map received.')
+
+    # do croping with initialize guess
 
 
 def cb_save_cur_odom(odom_msg):
@@ -327,6 +397,7 @@ if __name__ == '__main__':
     rospy.logwarn('Waiting for global map......')
     initialize_global_map(rospy.wait_for_message('/3d_map', PointCloud2))
     rospy.loginfo('Get global map......')
+
 
     while not initialized:
 
