@@ -28,6 +28,7 @@ cur_odom = None
 cur_scan = None
 new_scan = False
 headless = False
+reverse_tf = False
 stack_cnt = 0
 stack_scan = None
 
@@ -131,7 +132,7 @@ def crop_global_map_in_FOV(global_map, pose_estimation, cur_odom):
 
 
 def global_localization(pose_estimation):
-    global global_map, cur_scan, cur_odom, T_map_to_odom, new_scan, initialized
+    global global_map, cur_scan, cur_odom, T_map_to_odom, new_scan, initialized, reverse_tf
 
 
     if not new_scan:
@@ -191,14 +192,21 @@ def global_localization(pose_estimation):
         quat = tf.transformations.quaternion_from_matrix(T_map_to_odom)
         static_transformStamped.transform.rotation = Quaternion(*quat)
 
+        rospy.loginfo("Map to Odom: pos: {}, euler: {} \n".format(xyz, euler))
+
+        if reverse_tf:
+            static_transformStamped.header.frame_id = 'camera_init'
+            static_transformStamped.child_frame_id = 'map'
+            T_odom_to_map = tf.transformations.inverse_matrix(T_map_to_odom)
+            pos = tf.transformations.translation_from_matrix(T_odom_to_map)
+            static_transformStamped.transform.translation = Vector3(*pos)
+            quat = tf.transformations.quaternion_from_matrix(T_odom_to_map)
+            static_transformStamped.transform.rotation = Quaternion(*quat)
+
         broadcaster.sendTransform(static_transformStamped)
 
-        # br.sendTransform(tf.transformations.translation_from_matrix(T_map_to_odom),
-        #                  tf.transformations.quaternion_from_matrix(T_map_to_odom),
-        #                  cur_odom.header.stamp,
-        #                  'camera_init', 'map')
 
-        rospy.loginfo("Map to Odom: pos: {}, euler: {} \n".format(xyz, euler))
+
         return True
     else:
         rospy.logwarn('Not match!!!! \n')
@@ -311,6 +319,7 @@ if __name__ == '__main__':
 
     oneshot = rospy.get_param("~oneshot", False)
     headless = rospy.get_param("~headless", False)
+    reverse_tf = rospy.get_param("~reverse_tf", False)
 
     # get init frame offset from rosparam
     init_pos = Point()

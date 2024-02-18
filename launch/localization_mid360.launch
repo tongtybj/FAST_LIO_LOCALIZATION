@@ -2,11 +2,14 @@
   <!-- Launch file for Livox MID360 LiDAR -->
 
   <arg name="map" default="" />
+  <arg name="prefix" default="" />
 
   <arg name="headless" default="false" />
 
   <arg name="oneshot" default="false"/> <!-- only do once -->
+  <arg name="mapping" default="true" />
   <arg name="livox_driver" default="true" />
+  <arg name="reverse_tf" default="false" />
 
   <arg name="frame_offset_x" default="0.0"/>
   <arg name="frame_offset_y" default="0.0"/>
@@ -27,7 +30,7 @@
 
 
   <!-- fast lio for odometry -->
-  <include file="$(find fast_lio)/launch/mapping_mid360.launch" >
+  <include file="$(find fast_lio)/launch/mapping_mid360.launch" if="$(arg mapping)">
     <arg name="rviz" value="false" />
     <arg name="livox_driver" value="$(arg livox_driver)" />
   </include>
@@ -51,7 +54,10 @@
     <param name="registration/scan_thresh" value="$(arg scan_thresh)"/>
 
     <param name="headless" value="$(arg headless)"/>
+    <param name="reverse_tf" value="$(arg reverse_tf)"/>
     <param name="oneshot" value="$(arg oneshot)"/>
+    <remap from="/cloud_registered" to="$(arg prefix)/cloud_registered" />
+    <remap from="/Odometry" to="$(arg prefix)/Odometry" />
   </node>
 
 
