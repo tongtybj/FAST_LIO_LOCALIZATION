@@ -6,7 +6,7 @@ import copy
 import time
 
 import open3d as o3d
-if int(o3d.__version__.split('.')[0]) < 1:
+if int(o3d.__version__.split('.')[1]) < 10:
     o3d_registration = o3d.registration
 else:
     o3d_registration = o3d.pipelines.registration
@@ -52,11 +52,11 @@ def msg_to_array(pc_msg):
 
 def registration_at_scale(pc_scan, pc_map, initial, scale):
 
-    result_icp = o3d.registration.registration_icp(
+    result_icp = o3d_registration.registration_icp(
         voxel_down_sample(pc_scan, SCAN_VOXEL_SIZE * scale), voxel_down_sample(pc_map, MAP_VOXEL_SIZE * scale),
         MAX_CORRES_DIST, initial,
-        o3d.registration.TransformationEstimationPointToPoint(),
-        o3d.registration.ICPConvergenceCriteria(max_iteration=20)
+        o3d_registration.TransformationEstimationPointToPoint(),
+        o3d_registration.ICPConvergenceCriteria(max_iteration=20)
     )
     return result_icp.transformation, result_icp.fitness
 
