@@ -90,6 +90,21 @@ def publish_point_cloud(publisher, header, pc):
     msg.header = header
     publisher.publish(msg)
 
+def crop_curr_scan(cur_scan, cur_odom):
+
+    T_odom_to_base_link = pose_to_mat(cur_odom.pose)
+    T_base_link_to_odom = inverse_se3(T_odom_to_base_link)
+
+    cur_scan_in_odom = np.array(cur_scan.points)
+    cur_scan_in_odom = np.column_stack([cur_scan_in_odom, np.ones(len(cur_scan_in_odom))])
+    cur_scan_in_base_link = np.matmul(T_base_link_to_odom, cur_scan_in_odom.T).T
+
+    indices = np.where(dist_square(cur_scan_in_base_link[:, 0], cur_scan_in_base_link[:, 1], cur_scan_in_base_link[:, 2]) < SCAN_THRESH * SCAN_THRESH)
+
+    crop_cur_scan_in_odom = o3d.geometry.PointCloud()
+    crop_cur_scan_in_odom.points = o3d.utility.Vector3dVector(np.squeeze(cur_scan_in_odom[indices, :3]))
+
+    return crop_cur_scan_in_odom
 
 def crop_global_map_in_FOV(global_map, pose_estimation, cur_odom):
 
@@ -140,7 +155,7 @@ def global_localization(pose_estimation):
 
     rospy.loginfo('Global localization by scan-to-map matching......')
 
-    scan_tobe_mapped = copy.copy(cur_scan)
+    scan_tobe_mapped = crop_curr_scan(cur_scan, cur_odom)
 
     tic = time.time()
 
@@ -251,14 +266,11 @@ def cb_save_cur_scan(pc_msg):
                      pc_msg.fields[3], pc_msg.fields[7]]
     pc = msg_to_array(pc_msg)
 
-    # TODO: shift to "global_localization" to save computation
-    indices = np.where(dist_square(pc[:, 0], pc[:, 1], pc[:, 2]) < SCAN_THRESH * SCAN_THRESH)
-
     stack_cnt += 1
     if stack_scan is None:
-        stack_scan = np.squeeze(pc[indices, :3])
+        stack_scan = np.squeeze(pc[:, :3])
     else:
-        stack_scan = np.concatenate([stack_scan, np.squeeze(pc[indices, :3])])
+        stack_scan = np.concatenate([stack_scan, np.squeeze(pc[:, :3])])
 
     # print(stack_scan.shape)
     if stack_cnt == SCAN_STACK_SIZE:
