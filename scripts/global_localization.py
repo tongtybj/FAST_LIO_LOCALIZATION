@@ -51,11 +51,11 @@ def msg_to_array(pc_msg):
     pc[:, 2] = pc_array['z']
     return pc
 
-def registration_at_scale(pc_scan, pc_map, initial, scale):
+def registration_at_scale(pc_scan, pc_map, initial, scale, max_correst_dist):
 
     result_icp = o3d_registration.registration_icp(
         voxel_down_sample(pc_scan, SCAN_VOXEL_SIZE * scale), voxel_down_sample(pc_map, MAP_VOXEL_SIZE * scale),
-        MAX_CORRES_DIST, initial,
+        max_correst_dist, initial,
         o3d_registration.TransformationEstimationPointToPoint(),
         o3d_registration.ICPConvergenceCriteria(max_iteration=20)
     )
@@ -162,12 +162,14 @@ def global_localization(pose_estimation):
     global_map_in_FOV = crop_global_map_in_FOV(global_map, pose_estimation, cur_odom)
 
 
+    max_correst_dist = MAX_CORRES_DIST
     scale = 5
     if not initialized:
         scale = 2 # important, TODO: rosparam
+        max_correst_dist *=2
 
         # rough ICP point matching
-        transformation, fitness = registration_at_scale(scan_tobe_mapped, global_map_in_FOV, initial=pose_estimation, scale=scale)
+        transformation, fitness = registration_at_scale(scan_tobe_mapped, global_map_in_FOV, initial=pose_estimation, scale=scale, max_correst_dist = max_correst_dist)
 
         print("rough fitness: {}".format(fitness))
 
@@ -176,14 +178,19 @@ def global_localization(pose_estimation):
         transformation = pose_estimation
 
     # accurate ICP point matching
-    transformation, fitness = registration_at_scale(scan_tobe_mapped, global_map_in_FOV, initial=transformation, scale=1)
+    transformation, fitness = registration_at_scale(scan_tobe_mapped, global_map_in_FOV, initial=transformation, scale=1, max_correst_dist = max_correst_dist)
+
 
     toc = time.time()
     rospy.loginfo('Time: {:.2f}; fitness score:{:.2f}'.format(toc - tic, fitness))
 
     new_scan = False
 
-    if fitness > LOCALIZATION_TH:
+    thresh = LOCALIZATION_TH
+    # if not initialized:
+    #     thresh = 0.5
+
+    if fitness > thresh:
         T_map_to_odom = transformation
 
         # publish map_to_odom and tf
@@ -191,6 +198,15 @@ def global_localization(pose_estimation):
         xyz = tf.transformations.translation_from_matrix(T_map_to_odom)
         quat = tf.transformations.quaternion_from_matrix(T_map_to_odom)
         euler = np.array(tf.transformations.euler_from_quaternion(quat))
+
+        # # workaround to avoid the wrong estimation of rotation
+        # roll = euler[0]
+        # pitch = euler[1]
+        # tilt_thresh = 0.03
+        # if np.fabs(roll) > tilt_thresh or np.fabs(pitch) > tilt_thresh:
+        #     rospy.logwarn("the roll or pitch tilt too match: {} ".format(euler))
+        #     return False
+
         map_to_odom.pose.pose = Pose(Point(*xyz), Quaternion(*quat))
         map_to_odom.header.stamp = cur_odom.header.stamp
         map_to_odom.header.frame_id = 'map'
