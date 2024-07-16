@@ -51,13 +51,13 @@ def msg_to_array(pc_msg):
     pc[:, 2] = pc_array['z']
     return pc
 
-def registration_at_scale(pc_scan, pc_map, initial, scale, max_correst_dist):
+def registration_at_scale(pc_scan, pc_map, initial, max_correst_dist, max_iteration = 100):
 
     result_icp = o3d_registration.registration_icp(
-        voxel_down_sample(pc_scan, SCAN_VOXEL_SIZE * scale), voxel_down_sample(pc_map, MAP_VOXEL_SIZE * scale),
+        voxel_down_sample(pc_scan, SCAN_VOXEL_SIZE), voxel_down_sample(pc_map, MAP_VOXEL_SIZE),
         max_correst_dist, initial,
         o3d_registration.TransformationEstimationPointToPoint(),
-        o3d_registration.ICPConvergenceCriteria(max_iteration=20)
+        o3d_registration.ICPConvergenceCriteria(max_iteration=max_iteration)
     )
     return result_icp.transformation, result_icp.fitness
 
@@ -163,13 +163,12 @@ def global_localization(pose_estimation):
 
 
     max_correst_dist = MAX_CORRES_DIST
-    scale = 5
+
     if not initialized:
-        scale = 2 # important, TODO: rosparam
-        max_correst_dist *=2
+        max_correst_dist *=2 # TODO: paremter
 
         # rough ICP point matching
-        transformation, fitness = registration_at_scale(scan_tobe_mapped, global_map_in_FOV, initial=pose_estimation, scale=scale, max_correst_dist = max_correst_dist)
+        transformation, fitness = registration_at_scale(scan_tobe_mapped, global_map_in_FOV, initial=pose_estimation, max_correst_dist = max_correst_dist, max_iteration = 1000)
 
         print("rough fitness: {}".format(fitness))
 
@@ -177,8 +176,9 @@ def global_localization(pose_estimation):
     else:
         transformation = pose_estimation
 
+
     # accurate ICP point matching
-    transformation, fitness = registration_at_scale(scan_tobe_mapped, global_map_in_FOV, initial=transformation, scale=1, max_correst_dist = max_correst_dist)
+    transformation, fitness = registration_at_scale(scan_tobe_mapped, global_map_in_FOV, initial=transformation, max_correst_dist = max_correst_dist)
 
 
     toc = time.time()
