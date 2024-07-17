@@ -31,6 +31,9 @@ headless = False
 reverse_tf = False
 stack_cnt = 0
 stack_scan = None
+converged = False
+converge_cnt = 0
+
 
 np.set_printoptions(precision=3, suppress=True)
 
@@ -53,8 +56,19 @@ def msg_to_array(pc_msg):
 
 def registration_at_scale(pc_scan, pc_map, initial, max_correst_dist, max_iteration = 100):
 
+    global converged
+
+    scan_voxel_size = SCAN_VOXEL_SIZE
+    map_voxel_size = MAP_VOXEL_SIZE
+
+    if converged:
+        scan_voxel_size = 0.02
+        map_voxel_size = 0.02
+        max_correst_dist = 0.05
+
+
     result_icp = o3d_registration.registration_icp(
-        voxel_down_sample(pc_scan, SCAN_VOXEL_SIZE), voxel_down_sample(pc_map, MAP_VOXEL_SIZE),
+        voxel_down_sample(pc_scan, scan_voxel_size), voxel_down_sample(pc_map, map_voxel_size),
         max_correst_dist, initial,
         o3d_registration.TransformationEstimationPointToPoint(),
         o3d_registration.ICPConvergenceCriteria(max_iteration=max_iteration)
@@ -92,6 +106,13 @@ def publish_point_cloud(publisher, header, pc):
 
 def crop_curr_scan(cur_scan, cur_odom):
 
+    global converged
+
+    dist_thresh = SCAN_THRESH
+
+    if converged:
+        dist_thresh= 3.0
+
     T_odom_to_base_link = pose_to_mat(cur_odom.pose)
     T_base_link_to_odom = inverse_se3(T_odom_to_base_link)
 
@@ -99,7 +120,7 @@ def crop_curr_scan(cur_scan, cur_odom):
     cur_scan_in_odom = np.column_stack([cur_scan_in_odom, np.ones(len(cur_scan_in_odom))])
     cur_scan_in_base_link = np.matmul(T_base_link_to_odom, cur_scan_in_odom.T).T
 
-    indices = np.where(dist_square(cur_scan_in_base_link[:, 0], cur_scan_in_base_link[:, 1], cur_scan_in_base_link[:, 2]) < SCAN_THRESH * SCAN_THRESH)
+    indices = np.where(dist_square(cur_scan_in_base_link[:, 0], cur_scan_in_base_link[:, 1], cur_scan_in_base_link[:, 2]) < dist_thresh * dist_thresh)
 
     crop_cur_scan_in_odom = o3d.geometry.PointCloud()
     crop_cur_scan_in_odom.points = o3d.utility.Vector3dVector(np.squeeze(cur_scan_in_odom[indices, :3]))
@@ -107,6 +128,13 @@ def crop_curr_scan(cur_scan, cur_odom):
     return crop_cur_scan_in_odom
 
 def crop_global_map_in_FOV(global_map, pose_estimation, cur_odom):
+
+    global converged
+
+    dist_thresh = FOV_FAR
+
+    if converged:
+        dist_thresh= 3.0
 
     T_odom_to_base_link = pose_to_mat(cur_odom.pose)
     T_map_to_base_link = np.matmul(pose_estimation, T_odom_to_base_link)
@@ -120,18 +148,18 @@ def crop_global_map_in_FOV(global_map, pose_estimation, cur_odom):
     # extract pointcloud inside the FoV and range
     if FOV == 2 * np.pi:
         indices = np.where(
-            dist_square(global_map_in_base_link[:, 0], global_map_in_base_link[:, 1], global_map_in_base_link[:, 2]) < FOV_FAR * FOV_FAR)
+            dist_square(global_map_in_base_link[:, 0], global_map_in_base_link[:, 1], global_map_in_base_link[:, 2]) < dist_thresh * dist_thresh)
     elif FOV > np.pi:
         # All-range LiDAR
         indices = np.where(
-            (dist_square(global_map_in_base_link[:, 0], global_map_in_base_link[:, 1], global_map_in_base_link[:, 2]) < FOV_FAR * FOV_FAR) &
+            (dist_square(global_map_in_base_link[:, 0], global_map_in_base_link[:, 1], global_map_in_base_link[:, 2]) < dist_thresh * dist_thresh) &
             (np.abs(np.arctan2(global_map_in_base_link[:, 1], global_map_in_base_link[:, 0])) < FOV / 2.0)
         )
     else:
         # Front view type LiDAR
         indices = np.where(
             (global_map_in_base_link[:, 0] > 0) &
-            (global_map_in_base_link[:, 0] < FOV_FAR) &
+            (global_map_in_base_link[:, 0] < dist_thresh) &
             (np.abs(np.arctan2(global_map_in_base_link[:, 1], global_map_in_base_link[:, 0])) < FOV / 2.0)
         )
     global_map_in_FOV = o3d.geometry.PointCloud()
@@ -147,7 +175,7 @@ def crop_global_map_in_FOV(global_map, pose_estimation, cur_odom):
 
 
 def global_localization(pose_estimation):
-    global global_map, cur_scan, cur_odom, T_map_to_odom, new_scan, initialized, reverse_tf
+    global global_map, cur_scan, cur_odom, T_map_to_odom, new_scan, initialized, reverse_tf, converged, converge_cnt
 
 
     if not new_scan:
@@ -191,6 +219,11 @@ def global_localization(pose_estimation):
     #     thresh = 0.5
 
     if fitness > thresh:
+
+        converge_cnt +=1
+        if converge_cnt > 5:
+            converged = True
+
         T_map_to_odom = transformation
 
         # publish map_to_odom and tf
@@ -241,6 +274,10 @@ def global_localization(pose_estimation):
         return True
     else:
         rospy.logwarn('Not match!!!! \n')
+
+        converged = False
+        converge_cnt = 0
+
         return False
 
 
@@ -259,7 +296,7 @@ def initialize_global_map(pc_msg):
 
     global_map = o3d.geometry.PointCloud()
     global_map.points = o3d.utility.Vector3dVector(msg_to_array(pc_msg)[:, :3])
-    global_map = voxel_down_sample(global_map, MAP_VOXEL_SIZE)
+    # global_map = voxel_down_sample(global_map, 0.01)
     rospy.loginfo('Global map received.')
 
 
