@@ -6,28 +6,8 @@
 
   <arg name="headless" default="false" />
 
-  <arg name="oneshot" default="false"/> <!-- only do once -->
   <arg name="mapping" default="true" />
   <arg name="livox_driver" default="true" />
-  <arg name="reverse_tf" default="false" />
-
-  <arg name="frame_offset_x" default="0.0"/>
-  <arg name="frame_offset_y" default="0.0"/>
-  <arg name="frame_offset_z" default="0.0"/>
-  <arg name="frame_offset_roll" default="0.0"/>
-  <arg name="frame_offset_pitch" default="0.0"/>
-  <arg name="frame_offset_yaw" default="0.0"/>
-
-  <arg name="scan_stack_size" default="10"/>
-  <arg name="map_voxel_size" default="0.2"/> <!-- default: 0.4 -->
-  <arg name="scan_voxel_size" default="0.1"/>
-  <arg name="max_corres_dist" default="1.0"/>
-  <arg name="freq_localization" default="0.5"/>
-  <arg name="localization_thresh" default="0.95"/>
-  <arg name="fov_far" default="10.0"/>
-  <arg name="scan_thresh" default="5.0"/>
-
-
 
   <!-- fast lio for odometry -->
   <include file="$(find fast_lio)/launch/mapping_mid360.launch" if="$(arg mapping)">
@@ -37,27 +17,12 @@
 
   <!-- loalization-->
   <node pkg="fast_lio_localization" type="global_localization.py" name="global_localization" output="screen">
-    <param name="initial_frame_offset/x" value="$(arg frame_offset_x)"/>
-    <param name="initial_frame_offset/y" value="$(arg frame_offset_y)"/>
-    <param name="initial_frame_offset/z" value="$(arg frame_offset_z)"/>
-    <param name="initial_frame_offset/roll" value="$(arg frame_offset_roll)"/>
-    <param name="initial_frame_offset/pitch" value="$(arg frame_offset_pitch)"/>
-    <param name="initial_frame_offset/yaw" value="$(arg frame_offset_yaw)"/>
-
-    <param name="registration/stack_size" value="$(arg scan_stack_size)"/>
-    <param name="registration/max_corres_dist" value="$(arg max_corres_dist)"/>
-    <param name="registration/map_voxel_size" value="$(arg map_voxel_size)"/>
-    <param name="registration/scan_voxel_size" value="$(arg scan_voxel_size)"/>
-    <param name="registration/freq_localization" value="$(arg freq_localization)"/>
-    <param name="registration/localization_thresh" value="$(arg localization_thresh)"/>
-    <param name="registration/fov_far" value="$(arg fov_far)"/>
-    <param name="registration/scan_thresh" value="$(arg scan_thresh)"/>
 
     <param name="headless" value="$(arg headless)"/>
-    <param name="reverse_tf" value="$(arg reverse_tf)"/>
-    <param name="oneshot" value="$(arg oneshot)"/>
+
     <remap from="/cloud_registered" to="$(arg prefix)/cloud_registered" />
     <remap from="/Odometry" to="$(arg prefix)/Odometry" />
+    <rosparam file="$(find fast_lio_localization)/config/localization.yaml"/>
   </node>
 
 
